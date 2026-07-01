@@ -16,6 +16,8 @@ actions and an independent **Grid Policy Governor** that gates them. The governo
 dispatches hardware itself; `:high`/`:safety-critical` actions (such as
 operating near live equipment, at height or near the grid) require human sign-off.
 
+A live sample of the operator console (robotics safety console, shared template) is rendered in [docs/samples/operator-console.html](docs/samples/operator-console.html) — pure-data HTML output of `kotoba.robotics.ui`.
+
 ## Core Contract
 
 ```text
