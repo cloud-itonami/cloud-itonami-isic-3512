@@ -74,6 +74,33 @@
         (store/append-ledger! s {:op :b :disposition :hold})
         (is (= [:commit :hold] (mapv :disposition (store/ledger s))))))))
 
+(deftest site-power-supply-linkage-write-parity
+  (testing "additive: a site MAY carry the :power-supply/* record fields naming which downstream feeder it supplies (superproject ADR-2800000500), on BOTH backends"
+    (doseq [[label s] (backends)]
+      (testing label
+        (store/commit-record! s {:effect :site/upsert
+                                 :value {:id "site-2"
+                                         :power-supply/id "ps-community-1"
+                                         :power-supply/source-actor "cloud-itonami-isic-3512"
+                                         :power-supply/feeder-ref "feeder-1"
+                                         :power-supply/capacity-mw 3.2
+                                         :power-supply/agreement-start-iso "2026-05-01"}})
+        (let [site (store/site s "site-2")]
+          (is (= "ps-community-1" (:power-supply/id site)))
+          (is (= "cloud-itonami-isic-3512" (:power-supply/source-actor site)))
+          (is (= "feeder-1" (:power-supply/feeder-ref site)))
+          (is (= 3.2 (:power-supply/capacity-mw site)))
+          (is (= "2026-05-01" (:power-supply/agreement-start-iso site))))))))
+
+(deftest site-without-power-supply-linkage-is-unaffected
+  (testing "a site that never registers a :power-supply/* linkage behaves exactly as before this addition"
+    (doseq [[label s] (backends)]
+      (testing label
+        (let [site (store/site s "site-1")]
+          (is (nil? (:power-supply/id site)))
+          (is (nil? (:power-supply/source-actor site)))
+          (is (= "Sakura Community Solar+Storage" (:site-name site))))))))
+
 (deftest datomic-empty-store-is-usable
   (let [s (store/datomic-store)]
     (is (nil? (store/site s "nope")))

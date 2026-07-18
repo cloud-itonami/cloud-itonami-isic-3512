@@ -152,6 +152,30 @@
      :stake      :actuation/finalize-settlement
      :confidence (if s 0.9 0.3)}))
 
+(defn- register-power-supply
+  "Site power-supply-SOURCE registration -- draft the ADMINISTRATIVE
+  linkage of a community renewable-energy site to its OWN committed
+  `:power-supply` record (`:power-supply/id`/`:power-supply/source-
+  actor` -- this site's own generation actor, \"cloud-itonami-isic-
+  3512\" -- /`:power-supply/feeder-ref`/`:power-supply/capacity-mw`/
+  `:power-supply/agreement-start-iso`), naming WHICH downstream
+  electric-distribution-utility feeder (`cloud-itonami-isic-3510`)
+  this site supplies -- see superproject ADR-2800000500. Reuses the
+  SAME low-stakes normalize-only shape as `normalize-intake`
+  (`:site/upsert`): registering a supply linkage is a directory fact
+  about an already-agreed arrangement, never a real-time battery-
+  dispatch decision. `:power-supply/*` is entirely OPTIONAL on a site
+  record; a site with none of these fields behaves exactly as before
+  this addition."
+  [_db {:keys [patch]}]
+  {:summary    (str "サイト電力供給先登録: " (pr-str (keys patch)))
+   :rationale  "入力patchの正規化のみ。新規事実の生成なし -- このサイト自身の確定record(:power-supply/*)をフィーダーへの供給先として紐付けるだけ。"
+   :cites      (vec (keys patch))
+   :effect     :site/upsert
+   :value      patch
+   :stake      nil
+   :confidence 0.95})
+
 (defn infer
   "Route a request to the right proposal generator.
   request: {:op kw :subject id ...op-specific...}"
@@ -162,6 +186,7 @@
     :demand/screen                      (screen-instability db request)
     :actuation/dispatch-battery         (propose-battery-dispatch db request)
     :actuation/finalize-settlement      (propose-settlement db request)
+    :supply/register-power-supply       (register-power-supply db request)
     {:summary "未対応の操作" :rationale (str op) :cites []
      :effect :noop :stake nil :confidence 0.0}))
 
@@ -192,6 +217,7 @@
     :demand/screen                    {:site (store/site st subject)}
     :actuation/dispatch-battery       {:site (store/site st subject)}
     :actuation/finalize-settlement    {:site (store/site st subject)}
+    :supply/register-power-supply     {:site (store/site st subject)}
     {:site (store/site st subject)}))
 
 (defn- parse-proposal

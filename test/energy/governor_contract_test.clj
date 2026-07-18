@@ -144,6 +144,41 @@
       (is (some #{:already-settled} (-> (store/ledger db) last :basis)))
       (is (= 1 (count (store/settlement-history db))) "still only the one earlier finalization"))))
 
+;; ───────────── Additive: site <-> feeder power-supply linkage (ADR-2800000500) ─────────────
+;;
+;; The generation-side half of the entirely optional, no-shared-code
+;; isic-3512 <-> isic-3510 cross-actor contract -- registers which
+;; downstream feeder this community-energy site supplies.
+
+(deftest register-power-supply-always-needs-approval-then-links-the-site
+  (testing "a directory fact, never auto -- see energy.phase"
+    (let [[db actor] (fresh)
+          res (exec-op actor "p1"
+                    {:op :supply/register-power-supply :subject "site-2"
+                     :patch {:id "site-2"
+                             :power-supply/id "ps-community-1"
+                             :power-supply/source-actor "cloud-itonami-isic-3512"
+                             :power-supply/feeder-ref "feeder-1"
+                             :power-supply/capacity-mw 3.2
+                             :power-supply/agreement-start-iso "2026-05-01"}}
+                    operator)]
+      (is (= :interrupted (:status res)))
+      (let [r2 (approve! actor "p1")
+            site (store/site db "site-2")]
+        (is (= :commit (get-in r2 [:state :disposition])))
+        (is (= "ps-community-1" (:power-supply/id site)))
+        (is (= "cloud-itonami-isic-3512" (:power-supply/source-actor site)))
+        (is (= 3.2 (:power-supply/capacity-mw site)))))))
+
+(deftest register-power-supply-disabled-before-phase-2
+  (testing "phase 1 does not yet enable this op -> HOLD, :phase-disabled"
+    (let [[db actor] (fresh)
+          res (exec-op actor "p2"
+                    {:op :supply/register-power-supply :subject "site-2" :patch {}}
+                    (assoc operator :phase 1))]
+      (is (= :hold (get-in res [:state :disposition])))
+      (is (nil? (:power-supply/id (store/site db "site-2")))))))
+
 (deftest every-decision-leaves-one-ledger-fact
   (testing "write-only-through-ledger: N operations -> N ledger facts"
     (let [[db actor] (fresh)]

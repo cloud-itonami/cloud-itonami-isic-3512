@@ -39,3 +39,21 @@
 
 (deftest gate-holds-a-write-disabled-in-this-phase
   (is (= :hold (:disposition (phase/gate 0 {:op :site/intake} :commit)))))
+
+;; ───────────── Additive: site <-> feeder power-supply linkage (ADR-2800000500) ─────────────
+
+(deftest register-power-supply-enabled-from-phase-2
+  (is (contains? (:writes (get phase/phases 2)) :supply/register-power-supply))
+  (is (not (contains? (:writes (get phase/phases 1)) :supply/register-power-supply))))
+
+(deftest register-power-supply-never-auto-at-any-phase
+  (testing "a directory fact about an already-agreed arrangement, but still never auto-eligible -- the SAME posture :tariff/verify/:demand/screen have"
+    (doseq [[n {:keys [auto]}] phase/phases]
+      (is (not (contains? auto :supply/register-power-supply))
+          (str "phase " n " must not auto-commit :supply/register-power-supply")))))
+
+(deftest phase-3-auto-set-is-unchanged-by-power-supply-addition
+  (is (= #{:site/intake} (:auto (get phase/phases 3)))))
+
+(deftest gate-escalates-a-clean-power-supply-registration
+  (is (= :escalate (:disposition (phase/gate 3 {:op :supply/register-power-supply} :commit)))))
