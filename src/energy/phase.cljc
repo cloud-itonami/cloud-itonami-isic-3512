@@ -28,11 +28,21 @@
   the same posture every sibling's screening op has. Phase 3's `:auto`
   set here has only ONE member (`:site/intake`) -- this domain has no
   separate no-capital-risk 'file' lifecycle distinct from the site
-  record itself.")
+  record itself.
+
+  ── Additive: site <-> feeder power-supply linkage (ADR-2800000500) ──
+
+  `:supply/register-power-supply` joins phase 2's `:writes` alongside
+  `:tariff/verify`/`:demand/screen`, naming which downstream electric-
+  distribution-utility feeder (`cloud-itonami-isic-3510`) this site
+  supplies. Deliberately ABSENT from every phase's `:auto` set,
+  including phase 3 -- phase 3's `:auto` set here remains the SAME
+  single-member `#{:site/intake}` this addition does not touch.")
 
 (def read-ops  #{})
 (def write-ops #{:site/intake :tariff/verify :demand/screen
-                 :actuation/dispatch-battery :actuation/finalize-settlement})
+                 :actuation/dispatch-battery :actuation/finalize-settlement
+                 :supply/register-power-supply})
 
 ;; NOTE the invariant: `:actuation/dispatch-battery`/`:actuation/
 ;; finalize-settlement` are members of `write-ops` (governor-gated
@@ -43,7 +53,8 @@
   auto-commit when governor-clean>}."
   {0 {:label "read-only"        :writes #{}                                                          :auto #{}}
    1 {:label "assisted-intake"  :writes #{:site/intake}                                              :auto #{}}
-   2 {:label "assisted-verify"  :writes #{:site/intake :tariff/verify :demand/screen}                :auto #{}}
+   2 {:label "assisted-verify"  :writes #{:site/intake :tariff/verify :demand/screen
+                                          :supply/register-power-supply}                             :auto #{}}
    3 {:label "supervised-auto"  :writes write-ops
       :auto #{:site/intake}}})
 

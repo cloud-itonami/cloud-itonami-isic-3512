@@ -31,7 +31,21 @@
   jurisdictional basis, approved by whom' is always a query over an
   immutable log -- the audit trail a community trusting an energy
   operator needs, and the evidence an operator needs if a dispatch or
-  settlement decision is later disputed."
+  settlement decision is later disputed.
+
+  ── Additive: site <-> feeder power-supply linkage ──
+
+  A site record MAY also carry `:power-supply/id`/`:power-supply/
+  source-actor`/`:power-supply/feeder-ref`/`:power-supply/capacity-mw`/
+  `:power-supply/agreement-start-iso` -- the SAME no-shared-code, flat
+  cross-actor wire shape `cloud-itonami-isic-3510`'s own `grid.store`
+  ns docstring describes for its `feeder` entity, naming WHICH
+  downstream electric-distribution-utility feeder this site supplies.
+  See `energy.energyadvisor/register-power-supply` and superproject
+  ADR-2800000500. Entirely optional and additive -- `:site/upsert`
+  (already this actor's generic site directory-patch effect) carries
+  these fields when present; a site with none of them behaves exactly
+  as it did before this addition."
   (:require #?(:clj  [clojure.edn :as edn]
                :cljs [cljs.reader :as edn])
             [energy.registry :as registry]
@@ -188,10 +202,16 @@
 (defn- enc [v] (pr-str v))
 (defn- dec* [s] (when s (edn/read-string s)))
 
-(defn- site->tx [{:keys [id site-name battery-soc-percent soc-min-safe soc-max-safe
-                         grid-instability-flag-unresolved?
-                         battery-dispatched? settlement-finalized?
-                         jurisdiction status dispatch-number settlement-number]}]
+(defn- site->tx
+  "Additive: `:power-supply/*` (see `energy.energyadvisor/register-
+  power-supply`, superproject ADR-2800000500) is OPTIONAL -- a site
+  with none of these fields round-trips exactly as it did before this
+  addition."
+  [{:keys [id site-name battery-soc-percent soc-min-safe soc-max-safe
+          grid-instability-flag-unresolved?
+          battery-dispatched? settlement-finalized?
+          jurisdiction status dispatch-number settlement-number]
+   :as site}]
   (cond-> {:site/id id}
     site-name                                (assoc :site/site-name site-name)
     battery-soc-percent                       (assoc :site/battery-soc-percent battery-soc-percent)
@@ -203,24 +223,46 @@
     jurisdiction                              (assoc :site/jurisdiction jurisdiction)
     status                                    (assoc :site/status status)
     dispatch-number                           (assoc :site/dispatch-number dispatch-number)
-    settlement-number                         (assoc :site/settlement-number settlement-number)))
+    settlement-number                         (assoc :site/settlement-number settlement-number)
+    (:power-supply/id site)
+    (assoc :site/power-supply-id (:power-supply/id site))
+    (:power-supply/source-actor site)
+    (assoc :site/power-supply-source-actor (:power-supply/source-actor site))
+    (:power-supply/feeder-ref site)
+    (assoc :site/power-supply-feeder-ref (:power-supply/feeder-ref site))
+    (some? (:power-supply/capacity-mw site))
+    (assoc :site/power-supply-capacity-mw (:power-supply/capacity-mw site))
+    (:power-supply/agreement-start-iso site)
+    (assoc :site/power-supply-agreement-start-iso (:power-supply/agreement-start-iso site))))
 
 (def ^:private site-pull
   [:site/id :site/site-name :site/battery-soc-percent :site/soc-min-safe :site/soc-max-safe
    :site/grid-instability-flag-unresolved? :site/battery-dispatched? :site/settlement-finalized?
-   :site/jurisdiction :site/status :site/dispatch-number :site/settlement-number])
+   :site/jurisdiction :site/status :site/dispatch-number :site/settlement-number
+   :site/power-supply-id :site/power-supply-source-actor :site/power-supply-feeder-ref
+   :site/power-supply-capacity-mw :site/power-supply-agreement-start-iso])
 
 (defn- pull->site [m]
   (when (:site/id m)
-    {:id (:site/id m) :site-name (:site/site-name m)
-     :battery-soc-percent (:site/battery-soc-percent m)
-     :soc-min-safe (:site/soc-min-safe m)
-     :soc-max-safe (:site/soc-max-safe m)
-     :grid-instability-flag-unresolved? (boolean (:site/grid-instability-flag-unresolved? m))
-     :battery-dispatched? (boolean (:site/battery-dispatched? m))
-     :settlement-finalized? (boolean (:site/settlement-finalized? m))
-     :jurisdiction (:site/jurisdiction m) :status (:site/status m)
-     :dispatch-number (:site/dispatch-number m) :settlement-number (:site/settlement-number m)}))
+    (cond-> {:id (:site/id m) :site-name (:site/site-name m)
+             :battery-soc-percent (:site/battery-soc-percent m)
+             :soc-min-safe (:site/soc-min-safe m)
+             :soc-max-safe (:site/soc-max-safe m)
+             :grid-instability-flag-unresolved? (boolean (:site/grid-instability-flag-unresolved? m))
+             :battery-dispatched? (boolean (:site/battery-dispatched? m))
+             :settlement-finalized? (boolean (:site/settlement-finalized? m))
+             :jurisdiction (:site/jurisdiction m) :status (:site/status m)
+             :dispatch-number (:site/dispatch-number m) :settlement-number (:site/settlement-number m)}
+      (:site/power-supply-id m)
+      (assoc :power-supply/id (:site/power-supply-id m))
+      (:site/power-supply-source-actor m)
+      (assoc :power-supply/source-actor (:site/power-supply-source-actor m))
+      (:site/power-supply-feeder-ref m)
+      (assoc :power-supply/feeder-ref (:site/power-supply-feeder-ref m))
+      (some? (:site/power-supply-capacity-mw m))
+      (assoc :power-supply/capacity-mw (:site/power-supply-capacity-mw m))
+      (:site/power-supply-agreement-start-iso m)
+      (assoc :power-supply/agreement-start-iso (:site/power-supply-agreement-start-iso m)))))
 
 (defrecord DatomicStore [conn]
   Store
