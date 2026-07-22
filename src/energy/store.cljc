@@ -46,10 +46,9 @@
   (already this actor's generic site directory-patch effect) carries
   these fields when present; a site with none of them behaves exactly
   as it did before this addition."
-  (:require #?(:clj  [clojure.edn :as edn]
-               :cljs [cljs.reader :as edn])
-            [energy.registry :as registry]
-            [langchain.db :as d]))
+  (:require [energy.registry :as registry]
+            [langchain.db :as d]
+            [langchain-store.core :as ls]))
 
 (defprotocol Store
   (site [s id])
@@ -189,18 +188,14 @@
   Map/compound values (verification/instability-screen payloads,
   ledger facts, dispatch/settlement records) are stored as EDN strings
   so `langchain.db` doesn't expand them into sub-entities -- the same
-  convention every sibling actor's store uses."
-  {:site/id                          {:db/unique :db.unique/identity}
-   :verification/site-id            {:db/unique :db.unique/identity}
-   :instability-screen/site-id      {:db/unique :db.unique/identity}
-   :ledger/seq                      {:db/unique :db.unique/identity}
-   :dispatch/seq                    {:db/unique :db.unique/identity}
-   :settlement/seq                  {:db/unique :db.unique/identity}
-   :dispatch-sequence/jurisdiction  {:db/unique :db.unique/identity}
-   :settlement-sequence/jurisdiction {:db/unique :db.unique/identity}})
-
-(defn- enc [v] (pr-str v))
-(defn- dec* [s] (when s (edn/read-string s)))
+  convention every sibling actor's store uses. The identity-schema
+  builder, EDN-blob codec and seq-keyed event-log read/append are the
+  shared kotoba-lang/langchain-store machinery (ADR-2607141600) -- the
+  seam ~190 actors hand-roll; this store keeps only its domain wiring."
+  (ls/identity-schema
+   [:site/id :verification/site-id :instability-screen/site-id
+    :ledger/seq :dispatch/seq :settlement/seq
+    :dispatch-sequence/jurisdiction :settlement-sequence/jurisdiction]))
 
 (defn- site->tx
   "Additive: `:power-supply/*` (see `energy.energyadvisor/register-
@@ -273,25 +268,16 @@
          (map #(pull->site (d/pull (d/db conn) site-pull [:site/id %])))
          (sort-by :id)))
   (instability-screen-of [_ id]
-    (dec* (d/q '[:find ?p . :in $ ?sid
+    (ls/dec* (d/q '[:find ?p . :in $ ?sid
                 :where [?k :instability-screen/site-id ?sid] [?k :instability-screen/payload ?p]]
               (d/db conn) id)))
   (tariff-verification-of [_ site-id]
-    (dec* (d/q '[:find ?p . :in $ ?sid
+    (ls/dec* (d/q '[:find ?p . :in $ ?sid
                 :where [?a :verification/site-id ?sid] [?a :verification/payload ?p]]
               (d/db conn) site-id)))
-  (ledger [_]
-    (->> (d/q '[:find ?s ?f :where [?e :ledger/seq ?s] [?e :ledger/fact ?f]] (d/db conn))
-         (sort-by first)
-         (mapv (comp dec* second))))
-  (dispatch-history [_]
-    (->> (d/q '[:find ?s ?r :where [?e :dispatch/seq ?s] [?e :dispatch/record ?r]] (d/db conn))
-         (sort-by first)
-         (mapv (comp dec* second))))
-  (settlement-history [_]
-    (->> (d/q '[:find ?s ?r :where [?e :settlement/seq ?s] [?e :settlement/record ?r]] (d/db conn))
-         (sort-by first)
-         (mapv (comp dec* second))))
+  (ledger [_] (ls/read-stream conn :ledger/seq :ledger/fact))
+  (dispatch-history [_] (ls/read-stream conn :dispatch/seq :dispatch/record))
+  (settlement-history [_] (ls/read-stream conn :settlement/seq :settlement/record))
   (next-dispatch-sequence [_ jurisdiction]
     (or (d/q '[:find ?n . :in $ ?j
               :where [?e :dispatch-sequence/jurisdiction ?j] [?e :dispatch-sequence/next ?n]]
@@ -312,10 +298,10 @@
       (d/transact! conn [(site->tx value)])
 
       :verification/set
-      (d/transact! conn [{:verification/site-id (first path) :verification/payload (enc payload)}])
+      (d/transact! conn [{:verification/site-id (first path) :verification/payload (ls/enc payload)}])
 
       :instability-screen/set
-      (d/transact! conn [{:instability-screen/site-id (first path) :instability-screen/payload (enc payload)}])
+      (d/transact! conn [{:instability-screen/site-id (first path) :instability-screen/payload (ls/enc payload)}])
 
       :site/mark-dispatched
       (let [site-id (first path)
@@ -325,7 +311,7 @@
         (d/transact! conn
                      [(site->tx (assoc site-patch :id site-id))
                       {:dispatch-sequence/jurisdiction jurisdiction :dispatch-sequence/next next-n}
-                      {:dispatch/seq (count (dispatch-history s)) :dispatch/record (enc (get result "record"))}])
+                      {:dispatch/seq (count (dispatch-history s)) :dispatch/record (ls/enc (get result "record"))}])
         result)
 
       :site/mark-settled
@@ -336,12 +322,12 @@
         (d/transact! conn
                      [(site->tx (assoc site-patch :id site-id))
                       {:settlement-sequence/jurisdiction jurisdiction :settlement-sequence/next next-n}
-                      {:settlement/seq (count (settlement-history s)) :settlement/record (enc (get result "record"))}])
+                      {:settlement/seq (count (settlement-history s)) :settlement/record (ls/enc (get result "record"))}])
         result)
       nil)
     s)
   (append-ledger! [s fact]
-    (d/transact! conn [{:ledger/seq (count (ledger s)) :ledger/fact (enc fact)}])
+    (ls/append-blob! conn :ledger/seq :ledger/fact (count (ledger s)) fact)
     fact)
   (with-sites [s sites]
     (when (seq sites) (d/transact! conn (mapv site->tx (vals sites)))) s))
