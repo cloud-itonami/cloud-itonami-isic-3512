@@ -1,0 +1,231 @@
+(ns energy.render-html
+  "Build-time HTML renderer for `docs/samples/operator-console.html`.
+
+  Closes flagship checklist item 2 (com-junkawasaki/root ADR-2607189300,
+  Wave5 rollout / ADR-2608090800): this repo previously shipped only a
+  hand-typed robotics placeholder at `docs/samples/operator-console.html`
+  and had no generator at all. This namespace drives the REAL actor stack
+  (`energy.operation` -> `energy.governor` -> `energy.store`) through a
+  scenario adapted from this repo's own `energy.sim` demo driver
+  (`clojure -M:dev:run`, confirmed BEFORE writing this file to produce a
+  sensible ledger against the real seeded site ids `site-1`..`site-4`
+  -- those ids match `energy.store/demo-data`, so it was safe to reuse
+  rather than author from scratch), covering one full intake -> tariff
+  verify -> demand screen -> dispatch-battery -> finalize-settlement
+  lifecycle plus five distinct HARD-hold reasons, rendered
+  deterministically -- no invented numbers, no timestamps in the page
+  content, byte-identical across reruns against the same seed (verify
+  by diffing two consecutive runs).
+
+  Usage: `clojure -M:dev:render-html [out-file]`
+  (default `docs/samples/operator-console.html`)."
+  (:require [jp-go-dds.skin]
+            [clojure.string :as str]
+            [energy.store :as store]
+            [energy.operation :as op]
+            [langgraph.graph :as g]))
+
+(def ^:private operator
+  {:actor-id "op-1" :actor-role :energy-operator :phase 3})
+
+(defn- exec! [actor tid request]
+  (g/run* actor {:request request :context operator} {:thread-id tid}))
+
+(defn- approve! [actor tid]
+  (g/run* actor {:approval {:status :approved :by "op-1"}}
+          {:thread-id tid :resume? true}))
+
+(defn run-demo!
+  "Runs a fresh seeded store through a scenario mixing every disposition
+  this actor can reach: site-1 clears a full lifecycle -- intake
+  (auto-commit clean at phase 3, no capital risk), a tariff verification
+  (phase-gated -- not yet auto-eligible -- approved), a clean demand
+  screen (approved), a battery dispatch (ALWAYS escalates --
+  `:actuation/dispatch-battery` is permanently high-stakes, never auto
+  at any phase -- approved) and a settlement finalization (ALWAYS
+  escalates -- `:actuation/finalize-settlement`, same posture --
+  approved); site-2 HARD-holds a tariff verification with no official
+  spec-basis for its (deliberately unregistered) jurisdiction ATL;
+  site-3 clears tariff verification (approved) but then HARD-holds a
+  battery dispatch whose measured SOC (95.0) falls outside its own
+  recorded safe range [10.0, 90.0]; site-4 HARD-holds a demand screen
+  that itself detects an unresolved grid-instability flag; site-1 then
+  HARD-holds a second battery dispatch (`:already-dispatched`) and a
+  second settlement finalization (`:already-settled`). Every HARD hold
+  never reaches a human. Returns the resulting store -- every field
+  read by `render` below is real governor/store output, not a
+  hand-typed copy."
+  []
+  (let [db (store/seed-db)
+        actor (op/build db)]
+    (exec! actor "t1-intake" {:op :site/intake :subject "site-1"
+                               :patch {:id "site-1" :site-name "Sakura Community Solar+Storage"}})
+
+    (exec! actor "t1-tariff" {:op :tariff/verify :subject "site-1"})
+    (approve! actor "t1-tariff")
+
+    (exec! actor "t1-demand" {:op :demand/screen :subject "site-1"})
+    (approve! actor "t1-demand")
+
+    (exec! actor "t1-dispatch" {:op :actuation/dispatch-battery :subject "site-1"})
+    (approve! actor "t1-dispatch")
+
+    (exec! actor "t1-settle" {:op :actuation/finalize-settlement :subject "site-1"})
+    (approve! actor "t1-settle")
+
+    (exec! actor "t2-tariff" {:op :tariff/verify :subject "site-2" :no-spec? true})
+
+    (exec! actor "t3-tariff" {:op :tariff/verify :subject "site-3"})
+    (approve! actor "t3-tariff")
+
+    (exec! actor "t3-dispatch" {:op :actuation/dispatch-battery :subject "site-3"})
+
+    (exec! actor "t4-demand" {:op :demand/screen :subject "site-4"})
+
+    (exec! actor "t1-dispatch-again" {:op :actuation/dispatch-battery :subject "site-1"})
+
+    (exec! actor "t1-settle-again" {:op :actuation/finalize-settlement :subject "site-1"})
+    db))
+
+;; ----------------------------- rendering -----------------------------
+
+(defn- esc [v]
+  (-> (str v)
+      (str/replace "&" "&amp;")
+      (str/replace "<" "&lt;")
+      (str/replace ">" "&gt;")))
+
+(defn- last-fact-for [ledger site-id]
+  (last (filter #(= (:subject %) site-id) ledger)))
+
+(defn- status-cell [ledger site-id]
+  (let [f (last-fact-for ledger site-id)]
+    (cond
+      (nil? f) "<span class=\"muted\">no activity</span>"
+      (= :committed (:t f)) "<span class=\"ok\">committed</span>"
+      (= :approval-granted (:t f)) "<span class=\"ok\">approved &amp; committed</span>"
+      (= :governor-hold (:t f))
+      (let [rule (-> f :violations first :rule)]
+        (str "<span class=\"critical\">HARD hold &middot; " (esc (name (or rule :unknown))) "</span>"))
+      (= :approval-requested (:t f)) "<span class=\"warn\">awaiting approval</span>"
+      (= :approval-rejected (:t f)) "<span class=\"critical\">approval rejected</span>"
+      :else "<span class=\"muted\">in progress</span>")))
+
+(defn- lifecycle-cell [{:keys [battery-dispatched? settlement-finalized?]}]
+  (cond
+    (and battery-dispatched? settlement-finalized?)
+    "<span class=\"ok\">dispatched &amp; settled</span>"
+    battery-dispatched?
+    "<span class=\"warn\">dispatched, not yet settled</span>"
+    settlement-finalized?
+    "<span class=\"warn\">settled, not dispatched</span>"
+    :else "<span class=\"muted\">in intake / verification</span>"))
+
+(defn- site-row [ledger {:keys [id site-name jurisdiction battery-soc-percent
+                                 soc-min-safe soc-max-safe
+                                 grid-instability-flag-unresolved?] :as s}]
+  (format "        <tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+          (esc id) (esc site-name) (esc jurisdiction)
+          (esc (str battery-soc-percent "% [" soc-min-safe "," soc-max-safe "]"))
+          (if grid-instability-flag-unresolved?
+            "<span class=\"critical\">unresolved</span>"
+            "<span class=\"ok\">clear</span>")
+          (lifecycle-cell s)
+          (status-cell ledger id)))
+
+(defn- ledger-row [{:keys [t op subject disposition basis]}]
+  (format "        <tr><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td></tr>"
+          (esc (name t)) (esc (name (or op :n-a))) (esc subject)
+          (esc (or (some->> basis (map #(if (keyword? %) (name %) %)) (str/join ", "))
+                    (some-> disposition name) ""))))
+
+(defn- draft-row [prefix {:strs [record_id site_id jurisdiction kind immutable]}]
+  (format "        <tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+          (esc prefix) (esc record_id) (esc site_id) (esc jurisdiction)
+          (if immutable "<span class=\"ok\">immutable draft</span>" (esc kind))))
+
+(def ^:private action-gate-rows
+  ;; Static description of this actor's own closed op contract
+  ;; (README `Ops`, `energy.governor`/`energy.phase`) -- documentation of
+  ;; fixed behavior, not runtime telemetry, so it is legitimately
+  ;; hand-described rather than derived from a live run.
+  ["        <tr><td><code>:site/intake</code></td><td><span class=\"ok\">phase-3 auto-commit when clean, no capital risk yet</span></td></tr>"
+   "        <tr><td><code>:tariff/verify</code></td><td><span class=\"warn\">phase-3: human approval (not yet auto-eligible)</span> &middot; HARD hold on missing official spec-basis</td></tr>"
+   "        <tr><td><code>:demand/screen</code></td><td><span class=\"warn\">ALWAYS human approval when clean</span> &middot; an unresolved grid-instability flag is a HARD, un-overridable hold instead</td></tr>"
+   "        <tr><td><code>:actuation/dispatch-battery</code></td><td><span class=\"warn\">ALWAYS human approval &middot; never auto at any phase</span> &middot; battery SOC independently recomputed against the site's own safe range &middot; double-dispatch refused</td></tr>"
+   "        <tr><td><code>:actuation/finalize-settlement</code></td><td><span class=\"warn\">ALWAYS human approval &middot; never auto at any phase</span> &middot; evidence checklist + unresolved instability re-checked &middot; double-finalization refused</td></tr>"
+   "        <tr><td><code>:supply/register-power-supply</code></td><td><span class=\"warn\">phase-2+: human approval</span> &middot; optional feeder linkage to ISIC 3510 (never auto)</td></tr>"])
+
+(defn render
+  "Renders the full operator-console.html document from a store `db`
+  that has already run `run-demo!` (or any other real scenario)."
+  [db]
+  (let [ledger (vec (store/ledger db))
+        sites (store/all-sites db)
+        site-rows (str/join "\n" (map (partial site-row ledger) sites))
+        ledger-rows (str/join "\n" (map ledger-row ledger))
+        dispatch-rows (str/join "\n" (map (partial draft-row "battery-dispatch")
+                                          (store/dispatch-history db)))
+        settlement-rows (str/join "\n" (map (partial draft-row "settlement")
+                                            (store/settlement-history db)))]
+    (str
+     "<html><head><meta charset=\"utf-8\"><title>cloud-itonami-isic-3512 &middot; transmission and distribution of electric power (community energy)</title><style>"
+     (jp-go-dds.skin/dds+skin)
+     "</style></head><body>\n"
+     "<header class=\"bar\">\n"
+     "  <h1>Transmission and distribution of electric power — community renewable energy (ISIC 3512) — Operator Console</h1>\n"
+     "  <span class=\"badge\">read-only sample · governor-gated · battery dispatch/settlement always human-approved</span>\n"
+     "</header>\n"
+     "<main>\n"
+     "  <section class=\"card\">\n"
+     "    <h2>Community energy sites</h2>\n"
+     "    <p class=\"muted\">Demo snapshot — build-time-generated from <code>energy.store</code> via <code>energy.render-html</code> (<code>clojure -M:dev:render-html</code>), regenerated nightly.</p>\n"
+     "    <table>\n"
+     "      <thead><tr><th>Site</th><th>Name</th><th>Jurisdiction</th><th>Battery SOC (safe range)</th><th>Grid instability</th><th>Dispatch/settlement status</th><th>Last op status</th></tr></thead>\n"
+     "      <tbody>\n"
+     site-rows "\n"
+     "      </tbody>\n"
+     "    </table>\n"
+     "  </section>\n"
+     "  <section class=\"card\">\n"
+     "    <h2>Draft battery-dispatch / settlement records</h2>\n"
+     "    <p class=\"muted\">Unsigned drafts only — the licensed energy operator's own act of dispatching a real battery action or finalizing a real settlement is outside this actor's authority (see README <code>Actuation</code>).</p>\n"
+     "    <table>\n"
+     "      <thead><tr><th>Kind</th><th>Record id</th><th>Site</th><th>Jurisdiction</th><th>Status</th></tr></thead>\n"
+     "      <tbody>\n"
+     dispatch-rows (when (seq dispatch-rows) "\n")
+     settlement-rows "\n"
+     "      </tbody>\n"
+     "    </table>\n"
+     "  </section>\n"
+     "  <section class=\"card\">\n"
+     "    <h2>Action gate (Grid Policy Governor)</h2>\n"
+     "    <p class=\"muted\">HARD holds cannot be overridden. Spec-basis, evidence completeness, battery SOC range, unresolved grid-instability flags, and double dispatch/finalization are independently recomputed, never trusted from the proposal; a real battery dispatch or settlement finalization is always a human energy operator's call, at every rollout phase.</p>\n"
+     "    <table>\n"
+     "      <thead><tr><th>Op</th><th>Gate</th></tr></thead>\n"
+     "      <tbody>\n"
+     (str/join "\n" action-gate-rows) "\n"
+     "      </tbody>\n"
+     "    </table>\n"
+     "  </section>\n"
+     "  <section class=\"card\">\n"
+     "    <h2>Audit ledger (this run)</h2>\n"
+     "    <p class=\"muted\">Append-only decision-fact log — every proposal, hold and commit this scenario produced.</p>\n"
+     "    <table>\n"
+     "      <thead><tr><th>Fact</th><th>Op</th><th>Site</th><th>Basis</th></tr></thead>\n"
+     "      <tbody>\n"
+     ledger-rows "\n"
+     "      </tbody>\n"
+     "    </table>\n"
+     "  </section>\n"
+     "</main>\n"
+     "</body></html>\n")))
+
+(defn -main [& args]
+  (let [out (or (first args) "docs/samples/operator-console.html")
+        db (run-demo!)
+        html (render db)]
+    (spit out html)
+    (println "wrote" out "(" (count (store/ledger db)) "ledger facts,"
+             (count (store/dispatch-history db)) "battery-dispatch drafts,"
+             (count (store/settlement-history db)) "settlement drafts )")))
