@@ -5,7 +5,10 @@
  ;; (forkable outside the workspace); the :local/root paths only resolve
  ;; inside the monorepo checkout — a standalone fork should override them
  ;; with git coordinates.
- :deps {io.github.com-junkawasaki/langgraph-clj
+ :deps {io.github.kotoba-lang/jp-go-digital-design-system
+        {:git/url "https://github.com/kotoba-lang/jp-go-digital-design-system"
+         :git/sha "83db99546eabc53613ae826ea41d1533a3c574af"}
+        io.github.com-junkawasaki/langgraph-clj
         {:local/root "../../kotoba-lang/langgraph"}
         ;; langchain-store: the shared langchain.db store seam (EDN-blob
         ;; codec + identity schema + event-log helpers) that ~190 actors
@@ -19,6 +22,9 @@
          {:local/root "../../kotoba-lang/langchain"}}}
   ;; clojure -M:dev:run  -> drive the demo through one OperationActor
   :run {:main-opts ["-m" "energy.sim"]}
+  ;; clojure -M:dev:render-html [out-file] -> regenerate docs/samples/operator-console.html
+  ;; through the real actor (flagship checklist item 2, ADR-2607189300 / ADR-2608090800).
+  :render-html {:main-opts ["-m" "energy.render-html"]}
   :test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
                       {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
