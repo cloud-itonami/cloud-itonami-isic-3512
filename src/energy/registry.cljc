@@ -26,7 +26,7 @@
   finalizing the settlement itself (that is `energy.operation`'s
   `:actuation/dispatch-battery`/`:actuation/finalize-settlement`,
   always human-gated -- see README `Actuation`)."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (defn- unsigned-certificate
   "Every certificate this actor produces is UNSIGNED -- signature is the
@@ -70,7 +70,7 @@
     (throw (ex-info "battery-dispatch: jurisdiction required" {})))
   (when (< sequence 0)
     (throw (ex-info "battery-dispatch: sequence must be >= 0" {})))
-  (let [dispatch-number (str (str/upper-case jurisdiction) "-DSP-" (zero-pad sequence 6))
+  (let [dispatch-number (str (str/upper jurisdiction) "-DSP-" (zero-pad sequence 6))
         record {"record_id" dispatch-number
                 "kind" "battery-dispatch-draft"
                 "site_id" site-id
@@ -95,7 +95,7 @@
     (throw (ex-info "settlement: jurisdiction required" {})))
   (when (< sequence 0)
     (throw (ex-info "settlement: sequence must be >= 0" {})))
-  (let [settlement-number (str (str/upper-case jurisdiction) "-SET-" (zero-pad sequence 6))
+  (let [settlement-number (str (str/upper jurisdiction) "-SET-" (zero-pad sequence 6))
         record {"record_id" settlement-number
                 "kind" "settlement-draft"
                 "site_id" site-id
