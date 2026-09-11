@@ -111,7 +111,7 @@ any phase, by construction.** Two independent layers enforce this
 finalize-settlement` high-stakes gate and `energy.phase`'s phase
 table, which never puts `:actuation/dispatch-battery`/`:actuation/
 finalize-settlement` in any phase's `:auto` set) -- see `energy.
-phase`'s docstring and `test/energy/phase_test.clj`'s `dispatch-
+phase`'s docstring and `test/energy/phase_test.cljk`'s `dispatch-
 battery-never-auto-at-any-phase`/`finalize-settlement-never-auto-at-
 any-phase`. The actor may draft, check and recommend; a human energy
 operator is always the one who actually dispatches a battery action
@@ -207,14 +207,14 @@ stack only -- no bespoke domain capability lib to reference at all.
 
 | File | Role |
 |---|---|
-| `src/energy/store.cljc` | **Store** protocol -- `MemStore` ‖ `DatomicStore` (`langchain.db`) + append-only audit ledger + separate battery-dispatch/settlement history. No dynamically-filed sub-record -- both actuation ops act directly on a pre-seeded site, and the double-actuation guards check dedicated `:battery-dispatched?`/`:settlement-finalized?` booleans rather than a `:status` value |
-| `src/energy/registry.cljc` | Battery-dispatch + settlement draft records, plus `battery-soc-out-of-range?` -- the FIFTH instance of this fleet's two-sided range check family (`testlab`/`conservation`/`water`/`aerospace` established the first four) |
-| `src/energy/facts.cljc` | Per-jurisdiction grid-interconnection/tariff catalog with an official spec-basis citation per entry, honest coverage reporting |
-| `src/energy/energyadvisor.cljc` | **Energy Advisor** -- `mock-advisor` ‖ `llm-advisor`; intake/verification/instability-screening/battery-dispatch/settlement proposals |
-| `src/energy/governor.cljc` | **Grid Policy Governor** -- 4 HARD checks (spec-basis · evidence-incomplete · battery-soc-out-of-range, pure ground-truth two-sided-range recompute · grid-instability-flag-unresolved, unconditional evaluation, the THIRTY-THIRD grounding of this discipline and FIRST specifically for a grid-instability-flag concept) + already-dispatched/already-settled guards + 1 soft (confidence/actuation gate) |
-| `src/energy/phase.cljc` | **Phase 0→3** -- read-only → assisted intake → assisted verify → supervised (both battery dispatch and settlement finalization always human; site intake is the ONLY auto-eligible op, no direct capital risk) |
-| `src/energy/operation.cljc` | **OperationActor** -- langgraph-clj StateGraph |
-| `src/energy/sim.cljc` | demo driver |
+| `src/energy/store.cljk` | **Store** protocol -- `MemStore` ‖ `DatomicStore` (`langchain.db`) + append-only audit ledger + separate battery-dispatch/settlement history. No dynamically-filed sub-record -- both actuation ops act directly on a pre-seeded site, and the double-actuation guards check dedicated `:battery-dispatched?`/`:settlement-finalized?` booleans rather than a `:status` value |
+| `src/energy/registry.cljk` | Battery-dispatch + settlement draft records, plus `battery-soc-out-of-range?` -- the FIFTH instance of this fleet's two-sided range check family (`testlab`/`conservation`/`water`/`aerospace` established the first four) |
+| `src/energy/facts.cljk` | Per-jurisdiction grid-interconnection/tariff catalog with an official spec-basis citation per entry, honest coverage reporting |
+| `src/energy/energyadvisor.cljk` | **Energy Advisor** -- `mock-advisor` ‖ `llm-advisor`; intake/verification/instability-screening/battery-dispatch/settlement proposals |
+| `src/energy/governor.cljk` | **Grid Policy Governor** -- 4 HARD checks (spec-basis · evidence-incomplete · battery-soc-out-of-range, pure ground-truth two-sided-range recompute · grid-instability-flag-unresolved, unconditional evaluation, the THIRTY-THIRD grounding of this discipline and FIRST specifically for a grid-instability-flag concept) + already-dispatched/already-settled guards + 1 soft (confidence/actuation gate) |
+| `src/energy/phase.cljk` | **Phase 0→3** -- read-only → assisted intake → assisted verify → supervised (both battery dispatch and settlement finalization always human; site intake is the ONLY auto-eligible op, no direct capital risk) |
+| `src/energy/operation.cljk` | **OperationActor** -- langgraph-clj StateGraph |
+| `src/energy/sim.cljk` | demo driver |
 | `test/energy/*_test.clj` | governor contract · phase invariants · store parity · registry conformance · facts coverage |
 
 ## Business-process coverage (honest)
