@@ -1,5 +1,5 @@
 (ns energy.sim
-  "Demo driver -- `clojure -M:dev:run`. Walks a clean site through
+  "Demo driver -- `kbb -M:dev:run`. Walks a clean site through
   intake -> tariff verification -> grid-instability screening ->
   battery-dispatch proposal (always escalates) -> human approval ->
   commit, then through settlement proposal (always escalates) ->
