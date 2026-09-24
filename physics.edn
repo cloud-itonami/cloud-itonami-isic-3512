@@ -1,0 +1,45 @@
+;; What this vertical's robot physically does, declared for
+;; kotoba.robotics.process (kotoba-lang/robotics). `kbb -M:dev:physics` runs it.
+;;
+;; README "Robotics premise": a grid-tending robot performs switching, panel
+;; inspection and meter connection at a community renewable-energy site under
+;; the actor, gated by the independent Grid Policy Governor (work near live
+;; equipment, at height or near the grid needs human sign-off). The physical
+;; work: the inspection robot's patrol along the PV array rows, swapping a
+;; cracked PV module, and the site battery's module heating up on charge.
+;;
+;; Every number without a cited source is marked `estimate` in its :basis.
+;; Replacing an estimate with a sourced value is this bot's growth work.
+{:physics/schema "itonami.physical-ai.spec.v1"
+ :repo "cloud-itonami/cloud-itonami-isic-3512"
+ :cases
+ [{:id :array-row-patrol
+   :kind :transport
+   :procedure "panel-inspection robot drives one patrol leg along the PV array rows (400 m) on ground that ranges from mown grass to wet soil"
+   :params {:mass-kg 120.0 :payload-kg 15.0 :distance-m 400.0 :v-max-mps 1.0 :a-max-mps2 0.4
+            :brake-decel-mps2 0.8 :drive-force-n 400.0
+            :cog-height-m 0.40 :support-half-length-m 0.45 :payload-cog-height-m 0.90
+            :max-time-s 3600.0}
+   :sweep {:param :crr :values [0.02 0.05 0.08 0.12 0.16]}
+   :quantity :energy-j
+   :limit {:max 200000.0 :basis "estimate: a tenth of a ~0.55 kWh (2 MJ) robot battery per patrol leg, so one charge covers a full site round"}
+   :boundary {:lo 0.01 :hi 0.40}}
+  {:id :swap-cracked-pv-module
+   :kind :manipulator
+   :procedure "service arm on the maintenance cart lifts a replacement PV module from the cart rack up onto the array's mounting rails"
+   :params {:l1-m 0.90 :l2-m 0.80 :m1-kg 28.0 :m2-kg 20.0
+            :from [0.80 -0.10] :to [1.10 0.80] :duration-s 5.0 :steps 500}
+   :sweep {:param :payload-kg :values [15.0 20.0 25.0 30.0 35.0]}
+   :quantity :peak-tau1-nm
+   :limit {:max 800.0 :basis "estimate: continuous shoulder torque of a ~50 kg-payload industrial arm class"}
+   :boundary {:lo 2.0 :hi 150.0}}
+  {:id :battery-module-charge-heating
+   :kind :thermal
+   :procedure "lithium-ion module in the site's battery cabinet heats from its own losses during a 4-hour charge in a 30 C cabinet; half the module is modelled with an adiabatic (symmetry) back face, so the back face is the module core"
+   :params {:thickness-m 0.030 :conductivity-w-mk 1.0 :density-kg-m3 2500.0 :specific-heat-j-kgk 1000.0
+            :t0-c 30.0 :t-hot-c 30.0 :h-front-w-m2k 5.0 :h-back-w-m2k 0.0
+            :threshold-c 45.0 :duration-s 14400.0 :nodes 11}
+   :sweep {:param :q-gen-w-m3 :values [500.0 1000.0 2000.0 3000.0 4000.0]}
+   :quantity :final-back-c
+   :limit {:max 45.0 :basis "estimate: a 45 C upper charging temperature common on Li-ion cell datasheets; module properties and cabinet h = 5 W/m2K are estimates"}
+   :boundary {:lo 100.0 :hi 10000.0}}]}
