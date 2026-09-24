@@ -2,7 +2,7 @@
   "The phase table as executable tests. The invariant this repo cannot
   regress on: `:actuation/dispatch-battery`/`:actuation/finalize-
   settlement` must NEVER be a member of any phase's `:auto` set."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [energy.phase :as phase]))
 
 (deftest dispatch-battery-never-auto-at-any-phase
